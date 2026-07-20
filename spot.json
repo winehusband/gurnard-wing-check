@@ -7,11 +7,13 @@
   "tideStationName": "Cowes",
   "floodSetsDeg": 70,
   "ebbSetsDeg": 250,
+  "streamLeadHours": 1.25,
+  "goldenWindow": { "minKts": 15, "minHours": 3 },
   "bands": [
-    { "name": "Cross-shore SW", "from": 210, "to": 260, "penalty": 0, "cap": 5, "offshore": false, "note": "Prime — cross-shore, the good stuff" },
-    { "name": "Cross-on W–NW", "from": 260, "to": 330, "penalty": 0.3, "cap": 5, "offshore": false, "note": "Good — a little chop rolling in" },
+    { "name": "Prime SSW–WNW", "from": 200, "to": 290, "penalty": 0, "cap": 5, "offshore": false, "note": "Prime — SSW–WNW cross-shore, the good stuff" },
+    { "name": "Cross-on WNW–NNW", "from": 290, "to": 330, "penalty": 0.3, "cap": 5, "offshore": false, "note": "Good — a little chop rolling in" },
     { "name": "Onshore N–NE", "from": 330, "to": 50, "penalty": 0.7, "cap": 4.5, "offshore": false, "note": "Rideable but choppy onshore" },
     { "name": "Cross-off E–SE", "from": 50, "to": 130, "penalty": 0.5, "cap": 3, "offshore": true, "note": "Cross-off — caution, drift risk, don't go alone" },
-    { "name": "Offshore S–SSW", "from": 130, "to": 210, "penalty": 0, "cap": 2, "offshore": true, "note": "Offshore — never ride this alone" }
+    { "name": "Offshore S", "from": 130, "to": 200, "penalty": 0, "cap": 2, "offshore": true, "note": "Offshore — never ride this alone" }
   ]
 }

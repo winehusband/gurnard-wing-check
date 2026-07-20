@@ -59,8 +59,22 @@
   const NEAP_RANGE = 1.8;
   const SPRING_RANGE = 3.6;
 
-  function tideContext(events, when) {
+  function bracketEvents(parsed, ms) {
+    let prev = null;
+    let next = null;
+    for (const e of parsed) {
+      if (e.ms <= ms) prev = e;
+      else { next = e; break; }
+    }
+    return { prev, next };
+  }
+
+  // streamLeadHours: Solent streams turn ~1.25h before local HW at Gurnard
+  // (Humphrey calibration, 20 Jul 2026) — the stream STATE is looked up ahead
+  // of `when`, while height/range/springsCoeff stay anchored to `when` itself.
+  function tideContext(events, when, streamLeadHours) {
     if (!Array.isArray(events)) return null;
+    const lead = streamLeadHours || 0;
     const ms = when.getTime();
     const parsed = events
       .map((e) => ({
@@ -71,20 +85,24 @@
       .filter((e) => Number.isFinite(e.ms) && Number.isFinite(e.height))
       .sort((a, b) => a.ms - b.ms);
 
-    let prev = null;
-    let next = null;
-    for (const e of parsed) {
-      if (e.ms <= ms) prev = e;
-      else { next = e; break; }
-    }
+    const { prev, next } = bracketEvents(parsed, ms);
     if (!prev || !next) return null;
 
     const frac = (ms - prev.ms) / (next.ms - prev.ms);
     // Sinusoidal interpolation — tides are not linear between events.
     const height = prev.height + (next.height - prev.height) * (1 - Math.cos(Math.PI * frac)) / 2;
     const range = Math.abs(next.height - prev.height);
+
+    let state = next.kind === 'high' ? 'flood' : 'ebb';
+    if (lead) {
+      const shifted = bracketEvents(parsed, ms + lead * 3600000);
+      if (shifted.prev && shifted.next) {
+        state = shifted.next.kind === 'high' ? 'flood' : 'ebb';
+      }
+    }
+
     return {
-      state: next.kind === 'high' ? 'flood' : 'ebb',
+      state,
       height,
       range,
       springsCoeff: clamp((range - NEAP_RANGE) / (SPRING_RANGE - NEAP_RANGE), 0, 1),
@@ -93,12 +111,20 @@
     };
   }
 
-  function chopPenalty(windFromDeg, windKts, tide, spot) {
-    if (!tide || !Number.isFinite(windFromDeg)) return 0;
+  // Same geometry as the old chop model, but the interaction it detects is
+  // now scored as a bonus, not a penalty — see tideBonus below.
+  function windAgainstTide(windFromDeg, tide, spot) {
+    if (!tide || !Number.isFinite(windFromDeg)) return false;
     const set = tide.state === 'flood' ? spot.floodSetsDeg : spot.ebbSetsDeg;
     const windToward = (windFromDeg + 180) % 360;
-    if (angDiff(windToward, set) <= 120) return 0;
-    return (0.4 + 0.6 * tide.springsCoeff) * clamp(windKts / 20, 0, 1);
+    return angDiff(windToward, set) > 120;
+  }
+
+  // Water flowing into the wind raises apparent wind over the water — the
+  // local optimum for wing foiling, not a penalty (Humphrey calibration, 20 Jul 2026).
+  function tideBonus(windFromDeg, windKts, tide, spot) {
+    if (!windAgainstTide(windFromDeg, tide, spot)) return 0;
+    return (0.3 + 0.7 * tide.springsCoeff) * clamp(windKts / 15, 0, 1);
   }
 
   // Below this height on a big spring ebb, Gurnard Ledge is a foil-eater.
@@ -108,7 +134,7 @@
   function scoreHour(hour, tide, profileKey, spot) {
     const profile = PROFILES[profileKey] || PROFILES.intermediate;
     const reasons = [];
-    const flags = { offshore: false, chop: false, eddy: false, ledge: false };
+    const flags = { offshore: false, windAgainstTide: false, eddy: false, ledge: false };
 
     let score = speedScore(hour.meanKts, profile);
     if (score === 0 && Number.isFinite(hour.meanKts)) {
@@ -129,12 +155,15 @@
       score = Math.min(score, band.cap);
     }
 
-    const cp = chopPenalty(hour.dirDeg, hour.meanKts, tide, spot);
-    if (cp > 0.2) {
-      flags.chop = true;
-      reasons.push('Wind against tide — expect chop');
+    const bonus = tideBonus(hour.dirDeg, hour.meanKts, tide, spot);
+    if (bonus > 0.15) {
+      flags.windAgainstTide = true;
+      reasons.push('Wind against tide — apparent wind boost (expect some chop)');
+      score += bonus;
+      // Safety invariant: the bonus must never let an offshore band exceed
+      // its cap — re-apply the band cap after adding the bonus.
+      if (band) score = Math.min(score, band.cap);
     }
-    score -= cp;
 
     if (tide && tide.state === 'ebb') {
       flags.eddy = true;
@@ -153,5 +182,31 @@
     return { score: clamp(score, 0, 5), reasons, flags };
   }
 
-  return { PROFILES, clamp, speedScore, gustPenalty, angDiff, inBand, directionBand, parseEventMs, tideContext, chopPenalty, scoreHour };
+  // Pure — finds maximal runs of consecutive hourly entries that are all
+  // opposed (wind-against-tide) in daylight at or above minKts, and returns
+  // the ones at least minHours long. entries are in hourly order.
+  function goldenWindows(entries, opts) {
+    const minKts = opts.minKts;
+    const minHours = opts.minHours;
+    const windows = [];
+    let start = null;
+    for (let i = 0; i <= entries.length; i++) {
+      const e = entries[i];
+      const qualifies = !!e && e.opposed && e.daylight &&
+        Number.isFinite(e.meanKts) && e.meanKts >= minKts;
+      if (qualifies) {
+        if (start === null) start = i;
+      } else if (start !== null) {
+        const endIdx = i - 1;
+        if (endIdx - start + 1 >= minHours) windows.push({ startIdx: start, endIdx });
+        start = null;
+      }
+    }
+    return windows;
+  }
+
+  return {
+    PROFILES, clamp, speedScore, gustPenalty, angDiff, inBand, directionBand,
+    parseEventMs, tideContext, windAgainstTide, tideBonus, scoreHour, goldenWindows,
+  };
 });

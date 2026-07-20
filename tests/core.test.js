@@ -44,14 +44,20 @@ test('angDiff: shortest way round the compass', () => {
 });
 
 test('directionBand: maps Gurnard degrees to the right band', () => {
-  assert.equal(core.directionBand(230, spot.bands).name, 'Cross-shore SW');
-  assert.equal(core.directionBand(300, spot.bands).name, 'Cross-on W–NW');
+  assert.equal(core.directionBand(230, spot.bands).name, 'Prime SSW–WNW');
+  assert.equal(core.directionBand(300, spot.bands).name, 'Cross-on WNW–NNW');
   assert.equal(core.directionBand(10, spot.bands).name, 'Onshore N–NE'); // wraparound band 330-50
   assert.equal(core.directionBand(345, spot.bands).name, 'Onshore N–NE');
   assert.equal(core.directionBand(90, spot.bands).name, 'Cross-off E–SE');
-  assert.equal(core.directionBand(170, spot.bands).name, 'Offshore S–SSW');
+  assert.equal(core.directionBand(170, spot.bands).name, 'Offshore S');
   assert.equal(core.directionBand(170, spot.bands).cap, 2);
   assert.equal(core.directionBand(170, spot.bands).offshore, true);
+});
+
+test('directionBand: SSW prime band widened per Humphrey calibration', () => {
+  assert.equal(core.directionBand(205, spot.bands).name, 'Prime SSW–WNW');
+  assert.equal(core.directionBand(195, spot.bands).cap, 2); // just below the widened prime band -> still offshore
+  assert.equal(core.directionBand(230, spot.bands).name, 'Prime SSW–WNW');
 });
 
 test('parseEventMs: Admiralty timestamps without zone are UTC', () => {
@@ -86,25 +92,46 @@ test('tideContext: neap range gives low springs coefficient, outside window give
   assert.equal(core.tideContext(events, new Date('2026-07-21T03:00:00Z')), null);
 });
 
+test('tideContext: stream turns before the height curve (Humphrey — Solent streams lead HW by ~1.25h)', () => {
+  const events = [
+    { EventType: 'LowWater', DateTime: '2026-07-20T06:00:00', Height: 0.9 },
+    { EventType: 'HighWater', DateTime: '2026-07-20T12:00:00', Height: 4.0 },
+    { EventType: 'LowWater', DateTime: '2026-07-20T18:00:00', Height: 0.8 },
+    { EventType: 'HighWater', DateTime: '2026-07-20T24:20:00', Height: 4.1 },
+  ];
+  const when = new Date('2026-07-20T11:00:00Z');
+  const noLead = core.tideContext(events, when, 0);
+  const withLead = core.tideContext(events, when, 1.25);
+  assert.equal(noLead.state, 'flood'); // height curve still rising toward HW 12:00
+  assert.equal(withLead.state, 'ebb'); // stream has already turned, 1.25h ahead of HW
+  assert.equal(noLead.height, withLead.height); // height unaffected by the lead
+});
+
 const gurnardSpot = { floodSetsDeg: 70, ebbSetsDeg: 250 };
 const fullSpot = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'spot.json'), 'utf8'));
 
-test('chopPenalty: SW wind is clean on the flood, choppy on the ebb', () => {
-  const springs = { state: 'flood', springsCoeff: 1 };
-  // SW wind (from 225) blows toward 45; flood sets 70 -> agree -> no chop
-  assert.equal(core.chopPenalty(225, 18, springs, gurnardSpot), 0);
-  // Same wind on the ebb (sets 250) -> opposed -> chop
-  const ebbSprings = { state: 'ebb', springsCoeff: 1 };
-  const p = core.chopPenalty(225, 18, ebbSprings, gurnardSpot);
-  assert.ok(p > 0.5, `expected chop penalty, got ${p}`);
+test('windAgainstTide: SW wind (225) agrees with the flood, opposes the ebb', () => {
+  const flood = { state: 'flood', springsCoeff: 1 };
+  assert.equal(core.windAgainstTide(225, flood, gurnardSpot), false);
+  const ebb = { state: 'ebb', springsCoeff: 1 };
+  assert.equal(core.windAgainstTide(225, ebb, gurnardSpot), true);
+  assert.equal(core.windAgainstTide(225, null, gurnardSpot), false);
 });
 
-test('chopPenalty: scales with springs coefficient and wind, zero without tide data', () => {
-  const ebbNeaps = { state: 'ebb', springsCoeff: 0 };
+test('tideBonus: 0 with the flood for SW, maxes at 1.0 on ebb springs at 18kts, scales down at neaps/light wind', () => {
+  const flood = { state: 'flood', springsCoeff: 1 };
+  assert.equal(core.tideBonus(225, 18, flood, gurnardSpot), 0);
+
   const ebbSprings = { state: 'ebb', springsCoeff: 1 };
-  assert.ok(core.chopPenalty(225, 20, ebbNeaps, gurnardSpot) < core.chopPenalty(225, 20, ebbSprings, gurnardSpot));
-  assert.ok(core.chopPenalty(225, 10, ebbSprings, gurnardSpot) < core.chopPenalty(225, 20, ebbSprings, gurnardSpot));
-  assert.equal(core.chopPenalty(225, 20, null, gurnardSpot), 0);
+  assert.equal(core.tideBonus(225, 18, ebbSprings, gurnardSpot), 1.0);
+
+  const ebbNeaps = { state: 'ebb', springsCoeff: 0 };
+  assert.ok(core.tideBonus(225, 18, ebbNeaps, gurnardSpot) < core.tideBonus(225, 18, ebbSprings, gurnardSpot));
+
+  const ebbSpringsLight = { state: 'ebb', springsCoeff: 1 };
+  assert.ok(core.tideBonus(225, 8, ebbSpringsLight, gurnardSpot) < core.tideBonus(225, 18, ebbSprings, gurnardSpot));
+
+  assert.equal(core.tideBonus(225, 18, null, gurnardSpot), 0);
 });
 
 test('scoreHour: steady SW on the flood in daylight is a green window', () => {
@@ -115,7 +142,41 @@ test('scoreHour: steady SW on the flood in daylight is a green window', () => {
   );
   assert.ok(r.score >= 4, `expected >= 4, got ${r.score}`);
   assert.equal(r.flags.offshore, false);
-  assert.equal(r.flags.chop, false);
+  assert.equal(r.flags.windAgainstTide, false);
+});
+
+test('scoreHour: SW 18kts on ebb springs in daylight — prime band, bonus capped by the band cap', () => {
+  const r = core.scoreHour(
+    { meanKts: 18, gustKts: 18, dirDeg: 225, daylight: true },
+    { state: 'ebb', height: 2.5, range: 3.6, springsCoeff: 1, hoursToNext: 2, nextKind: 'low' },
+    'intermediate', fullSpot
+  );
+  assert.equal(r.score, 5); // base 5 (prime band, cap 5) + bonus, re-capped at 5
+  assert.equal(r.flags.windAgainstTide, true);
+});
+
+test('SAFETY: tideBonus can never push a score past its offshore band cap — Offshore S (170°)', () => {
+  const r = core.scoreHour(
+    { meanKts: 18, gustKts: 18, dirDeg: 170, daylight: true },
+    { state: 'ebb', height: 2.5, range: 3.6, springsCoeff: 1, hoursToNext: 2, nextKind: 'low' },
+    'advanced', fullSpot
+  );
+  assert.ok(r.score <= 2, `offshore must cap at 2 even with max bonus conditions, got ${r.score}`);
+  assert.equal(r.flags.offshore, true);
+});
+
+test('SAFETY: tideBonus can never push a score past its offshore band cap — Cross-off E-SE (90°, active bonus)', () => {
+  // 90° opposes the FLOOD stream (set 70°) at Gurnard's actual set angles — this is
+  // the real-world case where a wind-against-tide bonus applies inside an offshore
+  // band, so it is the one that actually exercises the re-cap after the bonus.
+  const r = core.scoreHour(
+    { meanKts: 18, gustKts: 18, dirDeg: 90, daylight: true },
+    { state: 'flood', height: 2.5, range: 3.6, springsCoeff: 1, hoursToNext: 2, nextKind: 'high' },
+    'advanced', fullSpot
+  );
+  assert.ok(r.score <= 3, `offshore must cap at 3 even with max bonus conditions, got ${r.score}`);
+  assert.equal(r.flags.offshore, true);
+  assert.equal(r.flags.windAgainstTide, true, 'this case must exercise an active bonus to prove the re-cap');
 });
 
 test('scoreHour: offshore wind can never score above its cap, however perfect', () => {
@@ -158,4 +219,56 @@ test('scoreHour: too-light wind reports why', () => {
   const r = core.scoreHour({ meanKts: 6, gustKts: 8, dirDeg: 230, daylight: true }, null, 'beginner', fullSpot);
   assert.equal(r.score, 0);
   assert.ok(r.reasons.some((s) => /light/i.test(s)));
+});
+
+function goldenEntry(meanKts, opposed, daylight) {
+  return { meanKts, opposed, daylight };
+}
+
+test('goldenWindows: a 5-hour opposed run at 16kts daylight is one window', () => {
+  const entries = [
+    goldenEntry(10, false, true),
+    goldenEntry(16, true, true),
+    goldenEntry(17, true, true),
+    goldenEntry(16, true, true),
+    goldenEntry(18, true, true),
+    goldenEntry(16, true, true),
+    goldenEntry(10, false, true),
+  ];
+  const windows = core.goldenWindows(entries, { minKts: 15, minHours: 3 });
+  assert.equal(windows.length, 1);
+  assert.deepEqual(windows[0], { startIdx: 1, endIdx: 5 });
+});
+
+test('goldenWindows: a run broken by one non-opposed hour into 2h+2h yields no windows', () => {
+  const entries = [
+    goldenEntry(16, true, true),
+    goldenEntry(16, true, true),
+    goldenEntry(16, false, true), // breaks the run
+    goldenEntry(16, true, true),
+    goldenEntry(16, true, true),
+  ];
+  const windows = core.goldenWindows(entries, { minKts: 15, minHours: 3 });
+  assert.equal(windows.length, 0);
+});
+
+test('goldenWindows: 3 hours at 14kts (below minKts) yields no window', () => {
+  const entries = [
+    goldenEntry(14, true, true),
+    goldenEntry(14, true, true),
+    goldenEntry(14, true, true),
+  ];
+  const windows = core.goldenWindows(entries, { minKts: 15, minHours: 3 });
+  assert.equal(windows.length, 0);
+});
+
+test('goldenWindows: respects custom opts', () => {
+  const entries = [
+    goldenEntry(20, true, true),
+    goldenEntry(20, true, true),
+  ];
+  assert.equal(core.goldenWindows(entries, { minKts: 15, minHours: 3 }).length, 0);
+  const windows = core.goldenWindows(entries, { minKts: 15, minHours: 2 });
+  assert.equal(windows.length, 1);
+  assert.deepEqual(windows[0], { startIdx: 0, endIdx: 1 });
 });
