@@ -48,5 +48,50 @@
     return bands.find((b) => inBand(deg, b)) || null;
   }
 
-  return { PROFILES, clamp, speedScore, gustPenalty, angDiff, inBand, directionBand };
+  function parseEventMs(dateTime) {
+    if (!dateTime) return NaN;
+    return /[Zz]$|[+-]\d{2}:\d{2}$/.test(dateTime)
+      ? new Date(dateTime).getTime()
+      : new Date(dateTime + 'Z').getTime();
+  }
+
+  // Cowes tidal range runs ~1.8m (dead neaps) to ~3.6m (big springs).
+  const NEAP_RANGE = 1.8;
+  const SPRING_RANGE = 3.6;
+
+  function tideContext(events, when) {
+    if (!Array.isArray(events)) return null;
+    const ms = when.getTime();
+    const parsed = events
+      .map((e) => ({
+        kind: /low/i.test(String(e.EventType)) ? 'low' : 'high',
+        ms: parseEventMs(e.DateTime),
+        height: Number(e.Height),
+      }))
+      .filter((e) => Number.isFinite(e.ms) && Number.isFinite(e.height))
+      .sort((a, b) => a.ms - b.ms);
+
+    let prev = null;
+    let next = null;
+    for (const e of parsed) {
+      if (e.ms <= ms) prev = e;
+      else { next = e; break; }
+    }
+    if (!prev || !next) return null;
+
+    const frac = (ms - prev.ms) / (next.ms - prev.ms);
+    // Sinusoidal interpolation — tides are not linear between events.
+    const height = prev.height + (next.height - prev.height) * (1 - Math.cos(Math.PI * frac)) / 2;
+    const range = Math.abs(next.height - prev.height);
+    return {
+      state: next.kind === 'high' ? 'flood' : 'ebb',
+      height,
+      range,
+      springsCoeff: clamp((range - NEAP_RANGE) / (SPRING_RANGE - NEAP_RANGE), 0, 1),
+      hoursToNext: (next.ms - ms) / 3600000,
+      nextKind: next.kind,
+    };
+  }
+
+  return { PROFILES, clamp, speedScore, gustPenalty, angDiff, inBand, directionBand, parseEventMs, tideContext };
 });

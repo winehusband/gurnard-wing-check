@@ -53,3 +53,35 @@ test('directionBand: maps Gurnard degrees to the right band', () => {
   assert.equal(core.directionBand(170, spot.bands).cap, 2);
   assert.equal(core.directionBand(170, spot.bands).offshore, true);
 });
+
+test('parseEventMs: Admiralty timestamps without zone are UTC', () => {
+  assert.equal(core.parseEventMs('2026-07-20T06:40:00'), Date.UTC(2026, 6, 20, 6, 40, 0));
+  assert.equal(core.parseEventMs('2026-07-20T06:40:00Z'), Date.UTC(2026, 6, 20, 6, 40, 0));
+});
+
+test('tideContext: ebb between HW and LW, springs coefficient from range', () => {
+  const events = [
+    { EventType: 'HighWater', DateTime: '2026-07-20T00:00:00', Height: 4.2 },
+    { EventType: 'LowWater', DateTime: '2026-07-20T06:00:00', Height: 0.6 },
+    { EventType: 'HighWater', DateTime: '2026-07-20T12:20:00', Height: 4.1 },
+  ];
+  const ctx = core.tideContext(events, new Date('2026-07-20T03:00:00Z'));
+  assert.equal(ctx.state, 'ebb');
+  assert.equal(ctx.nextKind, 'low');
+  assert.ok(Math.abs(ctx.range - 3.6) < 0.01);
+  assert.equal(ctx.springsCoeff, 1); // 3.6m range = full springs
+  assert.ok(ctx.height > 0.6 && ctx.height < 4.2);
+  assert.ok(Math.abs(ctx.hoursToNext - 3) < 0.01);
+
+  const flood = core.tideContext(events, new Date('2026-07-20T09:00:00Z'));
+  assert.equal(flood.state, 'flood');
+});
+
+test('tideContext: neap range gives low springs coefficient, outside window gives null', () => {
+  const events = [
+    { EventType: 'HighWater', DateTime: '2026-07-20T00:00:00', Height: 3.1 },
+    { EventType: 'LowWater', DateTime: '2026-07-20T06:00:00', Height: 1.3 }, // range 1.8
+  ];
+  assert.equal(core.tideContext(events, new Date('2026-07-20T03:00:00Z')).springsCoeff, 0);
+  assert.equal(core.tideContext(events, new Date('2026-07-21T03:00:00Z')), null);
+});
