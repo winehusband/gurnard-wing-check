@@ -31,5 +31,22 @@
     return clamp(2 * (factor - 1.4) / 0.4, 0, 2);
   }
 
-  return { PROFILES, clamp, speedScore, gustPenalty };
+  function angDiff(a, b) {
+    const d = Math.abs((((a - b) % 360) + 360) % 360);
+    return d > 180 ? 360 - d : d;
+  }
+
+  function inBand(deg, band) {
+    const d = ((deg % 360) + 360) % 360;
+    return band.from <= band.to
+      ? d >= band.from && d < band.to
+      : d >= band.from || d < band.to;
+  }
+
+  function directionBand(deg, bands) {
+    if (!Number.isFinite(deg) || !Array.isArray(bands)) return null;
+    return bands.find((b) => inBand(deg, b)) || null;
+  }
+
+  return { PROFILES, clamp, speedScore, gustPenalty, angDiff, inBand, directionBand };
 });

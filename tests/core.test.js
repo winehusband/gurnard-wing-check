@@ -1,7 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const core = require('../wind-core.js');
+const spot = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'spot.json'), 'utf8'));
 
 test('speedScore: ideal band scores 5, out of range scores 0', () => {
   const p = core.PROFILES.beginner; // min 12, ideal 15-20, upper 25, cap 28
@@ -32,4 +35,21 @@ test('gustPenalty: steady wind unpunished, gusty wind punished', () => {
   assert.equal(core.gustPenalty(15, 30), 2);            // factor 2.0, clamped
   assert.equal(core.gustPenalty(0, 10), 0);             // no mean -> no penalty
   assert.equal(core.gustPenalty(20, undefined), 0);     // missing gust data
+});
+
+test('angDiff: shortest way round the compass', () => {
+  assert.equal(core.angDiff(10, 350), 20);
+  assert.equal(core.angDiff(45, 250), 155);
+  assert.equal(core.angDiff(70, 70), 0);
+});
+
+test('directionBand: maps Gurnard degrees to the right band', () => {
+  assert.equal(core.directionBand(230, spot.bands).name, 'Cross-shore SW');
+  assert.equal(core.directionBand(300, spot.bands).name, 'Cross-on W–NW');
+  assert.equal(core.directionBand(10, spot.bands).name, 'Onshore N–NE'); // wraparound band 330-50
+  assert.equal(core.directionBand(345, spot.bands).name, 'Onshore N–NE');
+  assert.equal(core.directionBand(90, spot.bands).name, 'Cross-off E–SE');
+  assert.equal(core.directionBand(170, spot.bands).name, 'Offshore S–SSW');
+  assert.equal(core.directionBand(170, spot.bands).cap, 2);
+  assert.equal(core.directionBand(170, spot.bands).offshore, true);
 });
