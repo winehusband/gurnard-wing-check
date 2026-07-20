@@ -24,6 +24,9 @@ async function fetchJson(url) {
 }
 
 async function loadForecast() {
+  // Note: timezone=Europe/London makes Open-Meteo return offset-less local
+  // timestamps (e.g. "2026-07-20T14:00"). new Date() parses these as the
+  // DEVICE's local time, so this is only correct while the device itself is on UK time.
   const url = 'https://api.open-meteo.com/v1/forecast' +
     '?latitude=' + spot.lat + '&longitude=' + spot.lon +
     '&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m' +
@@ -194,6 +197,10 @@ async function renderLive(hours) {
 }
 
 function rerender() {
+  // Guard: a toggle click can fire before spot/forecast are loaded, or after
+  // the forecast fetch failed in init() — bail out rather than crash on
+  // forecast.hourly of null.
+  if (!spot || !forecast) return [];
   const hours = buildScoredHours();
   renderVerdict(hours);
   renderStrip(hours);
