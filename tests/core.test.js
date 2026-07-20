@@ -85,3 +85,23 @@ test('tideContext: neap range gives low springs coefficient, outside window give
   assert.equal(core.tideContext(events, new Date('2026-07-20T03:00:00Z')).springsCoeff, 0);
   assert.equal(core.tideContext(events, new Date('2026-07-21T03:00:00Z')), null);
 });
+
+const gurnardSpot = { floodSetsDeg: 70, ebbSetsDeg: 250 };
+
+test('chopPenalty: SW wind is clean on the flood, choppy on the ebb', () => {
+  const springs = { state: 'flood', springsCoeff: 1 };
+  // SW wind (from 225) blows toward 45; flood sets 70 -> agree -> no chop
+  assert.equal(core.chopPenalty(225, 18, springs, gurnardSpot), 0);
+  // Same wind on the ebb (sets 250) -> opposed -> chop
+  const ebbSprings = { state: 'ebb', springsCoeff: 1 };
+  const p = core.chopPenalty(225, 18, ebbSprings, gurnardSpot);
+  assert.ok(p > 0.5, `expected chop penalty, got ${p}`);
+});
+
+test('chopPenalty: scales with springs coefficient and wind, zero without tide data', () => {
+  const ebbNeaps = { state: 'ebb', springsCoeff: 0 };
+  const ebbSprings = { state: 'ebb', springsCoeff: 1 };
+  assert.ok(core.chopPenalty(225, 20, ebbNeaps, gurnardSpot) < core.chopPenalty(225, 20, ebbSprings, gurnardSpot));
+  assert.ok(core.chopPenalty(225, 10, ebbSprings, gurnardSpot) < core.chopPenalty(225, 20, ebbSprings, gurnardSpot));
+  assert.equal(core.chopPenalty(225, 20, null, gurnardSpot), 0);
+});

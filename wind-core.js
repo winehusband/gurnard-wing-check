@@ -93,5 +93,13 @@
     };
   }
 
-  return { PROFILES, clamp, speedScore, gustPenalty, angDiff, inBand, directionBand, parseEventMs, tideContext };
+  function chopPenalty(windFromDeg, windKts, tide, spot) {
+    if (!tide || !Number.isFinite(windFromDeg)) return 0;
+    const set = tide.state === 'flood' ? spot.floodSetsDeg : spot.ebbSetsDeg;
+    const windToward = (windFromDeg + 180) % 360;
+    if (angDiff(windToward, set) <= 120) return 0;
+    return (0.4 + 0.6 * tide.springsCoeff) * clamp(windKts / 20, 0, 1);
+  }
+
+  return { PROFILES, clamp, speedScore, gustPenalty, angDiff, inBand, directionBand, parseEventMs, tideContext, chopPenalty };
 });
