@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.png">
+<meta name="theme-color" content="#08273a">
+<title>Wing Check Feedback</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+  <h1>Wing Check Feedback</h1>
+  <div class="subtitle">Help tune the Gurnard wind ratings</div>
+</header>
+
+<div class="container feedback-page">
+  <div class="card feedback-card">
+    <h2>What to send</h2>
+    <p>
+      The app gets its wind forecast from Open-Meteo and live wind from Bramblemet at Bramble Bank. The bit that
+      needs local help is the rating: how the wind actually felt for wing foiling at Gurnard versus what the app
+      scored it.
+    </p>
+    <p>
+      Send the date, time, what the app scored that hour, and what you'd have scored it. A short note helps a lot.
+    </p>
+    <p class="feedback-send-note">
+      Send it back to me in a message. If you have this app, you probably already know where to find me.
+    </p>
+  </div>
+
+  <div class="card feedback-card">
+    <h2>Rating guide</h2>
+    <div class="rating-guide">
+      <div><strong>Green</strong><span>Good wind, cross-shore or better - get out there.</span></div>
+      <div><strong>Amber</strong><span>Rideable but marginal - light, gusty, or a bit onshore.</span></div>
+      <div><strong>Red</strong><span>Skip it - too light, too strong, or offshore.</span></div>
+    </div>
+  </div>
+
+  <div class="card feedback-card">
+    <h2>Copy this</h2>
+    <div class="feedback-template" id="feedbackTemplate">
+Date:
+Time:
+What the app scored (red/amber/green):
+What it should have scored:
+Wind speed and direction, if you know it:
+How it felt on the water:
+Anything the app got wrong:
+    </div>
+    <button class="feedback-copy" id="feedbackCopyButton" type="button">Copy template</button>
+  </div>
+
+  <a class="feedback-back" id="feedbackBackLink" href="./">Back to the wing check app</a>
+</div>
+
+<script>
+function initFeedbackPage() {
+  const template = document.getElementById('feedbackTemplate');
+  const copy = document.getElementById('feedbackCopyButton');
+
+  if (copy && navigator.clipboard) {
+    copy.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(template.textContent.trim());
+      copy.textContent = 'Copied';
+      setTimeout(() => { copy.textContent = 'Copy template'; }, 1400);
+    });
+  }
+}
+
+initFeedbackPage();
+</script>
+</body>
+</html>
