@@ -69,7 +69,7 @@ function buildScoredHours() {
     const day = h.time[i].slice(0, 10);
     const dl = daylight[day];
     const isDaylight = !!dl && time.getTime() >= dl.sunrise && time.getTime() <= dl.sunset;
-    const tide = tideEvents ? WindCore.tideContext(tideEvents, time) : null;
+    const tide = tideEvents ? WindCore.tideContext(tideEvents, time, spot.streamLeadHours || 0) : null;
     const hour = {
       meanKts: h.wind_speed_10m[i],
       gustKts: h.wind_gusts_10m[i],
@@ -84,7 +84,7 @@ function buildScoredHours() {
       Number.isFinite(hour.gustKts) && Number.isFinite(hour.dirDeg);
     const result = hasValidReadings
       ? WindCore.scoreHour(hour, tide, profileKey, spot)
-      : { score: 0, reasons: ['No forecast data'], flags: {} };
+      : { score: 0, reasons: ['No forecast data'], flags: { offshore: false, windAgainstTide: false, eddy: false, ledge: false } };
     hours.push({
       time,
       iso: h.time[i],
@@ -94,14 +94,26 @@ function buildScoredHours() {
       result,
     });
   }
+
+  const windows = WindCore.goldenWindows(
+    hours.map((e) => ({ meanKts: e.hour.meanKts, opposed: e.result.flags.windAgainstTide, daylight: e.hour.daylight })),
+    spot.goldenWindow || { minKts: 15, minHours: 3 }
+  );
+  for (const w of windows) {
+    for (let i = w.startIdx; i <= w.endIdx; i++) hours[i].golden = true;
+  }
+  hours.goldenWindows = windows;
+
   return hours;
 }
 
 function scoreClass(entry) {
-  if (!entry.hour.daylight) return 'score-dark';
-  if (entry.result.score >= 3.5) return 'score-green';
-  if (entry.result.score >= 2) return 'score-amber';
-  return 'score-red';
+  let cls;
+  if (!entry.hour.daylight) cls = 'score-dark';
+  else if (entry.result.score >= 3.5) cls = 'score-green';
+  else if (entry.result.score >= 2) cls = 'score-amber';
+  else cls = 'score-red';
+  return entry.golden ? cls + ' golden' : cls;
 }
 
 function fmtTime(date) {
@@ -120,6 +132,20 @@ function renderVerdict(hours) {
   const upcoming = hours.filter((e) => e.time.getTime() > now && e.time.getTime() < now + 12 * 3600 * 1000);
   const better = upcoming.find((e) => e.result.score >= Math.max(3.5, current.result.score + 1));
   if (better) text += ' Turning on around ' + fmtTime(better.time) + '.';
+
+  const goldenOpts = spot.goldenWindow || { minKts: 15, minHours: 3 };
+  const windows = hours.goldenWindows || [];
+  const todayWindow = windows.find((w) => {
+    for (let i = w.startIdx; i <= w.endIdx; i++) {
+      if (hours[i].day === current.day && hours[i].time.getTime() > now) return true;
+    }
+    return false;
+  });
+  if (todayWindow) {
+    const first = hours[todayWindow.startIdx];
+    const last = hours[todayWindow.endIdx];
+    text += ` Golden window ${fmtTime(first.time)}–${fmtTime(last.time)}: wind against tide, ${goldenOpts.minKts}+ kts.`;
+  }
   $('verdictText').textContent = text;
 }
 

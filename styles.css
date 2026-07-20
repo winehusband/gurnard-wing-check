@@ -938,6 +938,7 @@
 .hour-cell.score-amber { background: #b07d2a; }
 .hour-cell.score-green { background: #2e8b57; }
 .hour-cell.score-dark { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.3); cursor: default; }
+.hour-cell.golden { outline: 2px solid #ffd700; outline-offset: -2px; }
 
 .verdict-score { font-size: 2.4rem; font-weight: 700; }
 .live-drift { color: #ffb454; font-weight: 600; }

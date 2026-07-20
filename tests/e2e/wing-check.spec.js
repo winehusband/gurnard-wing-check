@@ -110,3 +110,17 @@ test('offshore hour shows warning', async ({ page }) => {
   expect(reasonsText).toMatch(/offshore/i);
   expect(reasonsText).toMatch(/never ride this alone/i);
 });
+
+test('golden window: sustained wind-against-tide shows gold ring and verdict callout', async ({ page }) => {
+  await page.unroute('**/api.open-meteo.com/**');
+  await page.route('**/api.open-meteo.com/**', (route) =>
+    route.fulfill({ json: openMeteoFixture({ dir: 230, wind: 16, gust: 18 }) }));
+  await page.goto(APP_URL);
+  await expect(page.locator('.hour-cell').first()).toBeVisible();
+
+  // Prime band (200-290), ebb tide opposes this direction (windAgainstTide),
+  // 16kts clears the 15kn golden-window threshold, and the fixture's daylight
+  // window covers the whole day — so the run around "now" should qualify.
+  await expect(page.locator('.hour-cell.golden').first()).toBeVisible();
+  await expect(page.locator('#verdictText')).toContainText(/golden window/i);
+});

@@ -97,7 +97,7 @@ test('tideContext: stream turns before the height curve (Humphrey — Solent str
     { EventType: 'LowWater', DateTime: '2026-07-20T06:00:00', Height: 0.9 },
     { EventType: 'HighWater', DateTime: '2026-07-20T12:00:00', Height: 4.0 },
     { EventType: 'LowWater', DateTime: '2026-07-20T18:00:00', Height: 0.8 },
-    { EventType: 'HighWater', DateTime: '2026-07-20T24:20:00', Height: 4.1 },
+    { EventType: 'HighWater', DateTime: '2026-07-21T00:20:00', Height: 4.1 },
   ];
   const when = new Date('2026-07-20T11:00:00Z');
   const noLead = core.tideContext(events, when, 0);
@@ -177,6 +177,19 @@ test('SAFETY: tideBonus can never push a score past its offshore band cap — Cr
   assert.ok(r.score <= 3, `offshore must cap at 3 even with max bonus conditions, got ${r.score}`);
   assert.equal(r.flags.offshore, true);
   assert.equal(r.flags.windAgainstTide, true, 'this case must exercise an active bonus to prove the re-cap');
+});
+
+test('SAFETY: tideBonus can never push a score past its offshore band cap — Offshore S (195°, active bonus)', () => {
+  // 195° sits in the widened "Offshore S" band (130-200, cap 2) and opposes
+  // the ebb set (250°) geometrically — windToward 15° vs set 250° is an
+  // angDiff of 125° > 120°, so the bonus is active here too.
+  const r = core.scoreHour(
+    { meanKts: 18, gustKts: 18, dirDeg: 195, daylight: true },
+    { state: 'ebb', springsCoeff: 1, height: 2, range: 3.4, hoursToNext: 2, nextKind: 'low' },
+    'advanced', fullSpot
+  );
+  assert.ok(r.score <= 2, `offshore must cap at 2 even with max bonus conditions, got ${r.score}`);
+  assert.equal(r.flags.offshore, true);
 });
 
 test('scoreHour: offshore wind can never score above its cap, however perfect', () => {
