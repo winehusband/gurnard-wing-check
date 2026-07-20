@@ -267,7 +267,7 @@ async function init() {
     setStatus('Forecast + Cowes tide loaded.');
   } catch (e) {
     tideEvents = null;
-    setStatus('Tide data unavailable — scoring on wind alone; chop and eddy rules not applied.');
+    setStatus('Tide data unavailable — scoring on wind alone; tide bonus and eddy notes not applied.');
   }
 
   const hours = rerender();
