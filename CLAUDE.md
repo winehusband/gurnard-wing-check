@@ -1,3 +1,13 @@
+# Gurnard Wing Check
+
+Single-spot wing-foiling conditions app for Gurnard, IoW. Sibling of
+~/Desktop/gurnard-beach-walk and ~/Desktop/iow-sea-swim — follow their patterns.
+
+Rules:
+- All scoring logic in wind-core.js (pure, UMD, unit-tested). app.js = fetch + render only.
+- Tunable numbers live in spot.json or WindCore.PROFILES only. Log real sessions in CALIBRATION.md.
+- Offshore bands are safety-capped; never weaken this without an explicit instruction.
+- npm test && npm run check before every commit.
 
 ## Automatic Adversarial Code Review
 
