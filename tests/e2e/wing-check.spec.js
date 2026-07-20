@@ -15,8 +15,8 @@ function openMeteoFixture() {
   for (let i = 0; i < 48; i++) {
     const t = new Date(today.getTime() + i * 3600 * 1000);
     time.push(t.toISOString().slice(0, 16));
-    wind.push(18);
-    gusts.push(21);
+    wind.push(13);
+    gusts.push(15);
     dir.push(230); // steady cross-shore SW
   }
   const day0 = time[0].slice(0, 10);
@@ -65,10 +65,17 @@ test('renders verdict, strip, live card and reasons modal', async ({ page }) => 
 test('skill toggle persists and rescores', async ({ page }) => {
   await page.goto(APP_URL);
   await expect(page.locator('#verdictScore')).not.toHaveText('–');
+  const scoreBefore = await page.locator('#verdictScore').textContent();
+
   await page.locator('button[data-profile="beginner"]').click();
+
   await expect(page.locator('button[data-profile="beginner"]')).toHaveClass(/active/);
   const stored = await page.evaluate(() => localStorage.getItem('wing_profile'));
   expect(stored).toBe('beginner');
+
+  // Prove the toggle actually re-scores rather than just recording the click:
+  // 13kts is intermediate 4.25 (9/10) but beginner 3.0 (6/10) under this fixture.
+  await expect(page.locator('#verdictScore')).not.toHaveText(scoreBefore);
 });
 
 test('degraded mode: tide failure falls back to wind-only scoring', async ({ page }) => {
