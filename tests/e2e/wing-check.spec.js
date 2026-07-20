@@ -5,7 +5,11 @@ const { test, expect } = require('@playwright/test');
 // file:// page, which breaks the app's `fetch('spot.json')` call.
 const APP_URL = '/index.html';
 
-function openMeteoFixture() {
+function openMeteoFixture(opts) {
+  const o = opts || {};
+  const windSpeed = o.wind !== undefined ? o.wind : 13;
+  const gustSpeed = o.gust !== undefined ? o.gust : 15;
+  const dirDeg = o.dir !== undefined ? o.dir : 230; // steady cross-shore SW by default
   const time = [];
   const wind = [];
   const gusts = [];
@@ -15,18 +19,20 @@ function openMeteoFixture() {
   for (let i = 0; i < 48; i++) {
     const t = new Date(today.getTime() + i * 3600 * 1000);
     time.push(t.toISOString().slice(0, 16));
-    wind.push(13);
-    gusts.push(15);
-    dir.push(230); // steady cross-shore SW
+    wind.push(windSpeed);
+    gusts.push(gustSpeed);
+    dir.push(dirDeg);
   }
   const day0 = time[0].slice(0, 10);
   const day1 = time[24].slice(0, 10);
   return {
     hourly: { time, wind_speed_10m: wind, wind_gusts_10m: gusts, wind_direction_10m: dir },
     daily: {
+      // Daylight window covers the whole day so scoring doesn't flake
+      // depending on what time of day the suite happens to run.
       time: [day0, day1],
-      sunrise: [day0 + 'T05:00', day1 + 'T05:00'],
-      sunset: [day0 + 'T21:00', day1 + 'T21:00'],
+      sunrise: [day0 + 'T00:00', day1 + 'T00:00'],
+      sunset: [day0 + 'T23:59', day1 + 'T23:59'],
     },
   };
 }
@@ -85,4 +91,22 @@ test('degraded mode: tide failure falls back to wind-only scoring', async ({ pag
   await page.goto(APP_URL);
   await expect(page.locator('#dataStatus')).toContainText('wind alone');
   await expect(page.locator('#verdictScore')).not.toHaveText('–');
+});
+
+test('offshore hour shows warning', async ({ page }) => {
+  await page.unroute('**/api.open-meteo.com/**');
+  await page.route('**/api.open-meteo.com/**', (route) =>
+    route.fulfill({ json: openMeteoFixture({ dir: 170, wind: 18, gust: 20 }) }));
+  await page.goto(APP_URL);
+  await expect(page.locator('.hour-cell').first()).toBeVisible();
+
+  // Offshore S-SSW band caps score at 2 (< 3.5 green threshold), so no
+  // hour cell anywhere in the strip should ever render green.
+  await expect(page.locator('.hour-cell.score-green')).toHaveCount(0);
+
+  await page.locator('.hour-cell').first().click();
+  await expect(page.locator('#reasonsModal')).toHaveClass(/open/);
+  const reasonsText = await page.locator('#reasonsList').textContent();
+  expect(reasonsText).toMatch(/offshore/i);
+  expect(reasonsText).toMatch(/never ride this alone/i);
 });
