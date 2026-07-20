@@ -24,3 +24,12 @@ test('speedScore: profiles differ — advanced rides lighter wind than beginner'
   assert.equal(core.speedScore(30, core.PROFILES.intermediate), 3);
   assert.equal(core.speedScore(30, core.PROFILES.advanced), 5);
 });
+
+test('gustPenalty: steady wind unpunished, gusty wind punished', () => {
+  assert.equal(core.gustPenalty(20, 24), 0);            // factor 1.2
+  assert.equal(core.gustPenalty(20, 28), 0);            // factor 1.4 exactly
+  assert.ok(Math.abs(core.gustPenalty(18, 30) - 1.333) < 0.01); // factor 1.67
+  assert.equal(core.gustPenalty(15, 30), 2);            // factor 2.0, clamped
+  assert.equal(core.gustPenalty(0, 10), 0);             // no mean -> no penalty
+  assert.equal(core.gustPenalty(20, undefined), 0);     // missing gust data
+});

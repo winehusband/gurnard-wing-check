@@ -24,5 +24,12 @@
     return 3 - 3 * (kts - p.upper) / (p.cap - p.upper);
   }
 
-  return { PROFILES, clamp, speedScore };
+  function gustPenalty(meanKts, gustKts) {
+    if (!Number.isFinite(meanKts) || !Number.isFinite(gustKts) || meanKts <= 0) return 0;
+    const factor = gustKts / meanKts;
+    if (factor <= 1.4) return 0;
+    return clamp(2 * (factor - 1.4) / 0.4, 0, 2);
+  }
+
+  return { PROFILES, clamp, speedScore, gustPenalty };
 });
