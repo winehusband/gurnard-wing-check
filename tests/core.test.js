@@ -87,6 +87,7 @@ test('tideContext: neap range gives low springs coefficient, outside window give
 });
 
 const gurnardSpot = { floodSetsDeg: 70, ebbSetsDeg: 250 };
+const fullSpot = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'spot.json'), 'utf8'));
 
 test('chopPenalty: SW wind is clean on the flood, choppy on the ebb', () => {
   const springs = { state: 'flood', springsCoeff: 1 };
@@ -104,4 +105,57 @@ test('chopPenalty: scales with springs coefficient and wind, zero without tide d
   assert.ok(core.chopPenalty(225, 20, ebbNeaps, gurnardSpot) < core.chopPenalty(225, 20, ebbSprings, gurnardSpot));
   assert.ok(core.chopPenalty(225, 10, ebbSprings, gurnardSpot) < core.chopPenalty(225, 20, ebbSprings, gurnardSpot));
   assert.equal(core.chopPenalty(225, 20, null, gurnardSpot), 0);
+});
+
+test('scoreHour: steady SW on the flood in daylight is a green window', () => {
+  const r = core.scoreHour(
+    { meanKts: 18, gustKts: 22, dirDeg: 230, daylight: true },
+    { state: 'flood', height: 2.8, range: 3.0, springsCoeff: 0.66, hoursToNext: 2, nextKind: 'high' },
+    'intermediate', fullSpot
+  );
+  assert.ok(r.score >= 4, `expected >= 4, got ${r.score}`);
+  assert.equal(r.flags.offshore, false);
+  assert.equal(r.flags.chop, false);
+});
+
+test('scoreHour: offshore wind can never score above its cap, however perfect', () => {
+  const r = core.scoreHour(
+    { meanKts: 18, gustKts: 20, dirDeg: 170, daylight: true },
+    null, 'advanced', fullSpot
+  );
+  assert.ok(r.score <= 2, `offshore must cap at 2, got ${r.score}`);
+  assert.equal(r.flags.offshore, true);
+  assert.ok(r.reasons.some((s) => /offshore/i.test(s)));
+});
+
+test('scoreHour: gusty SE morning is capped with warnings', () => {
+  const r = core.scoreHour(
+    { meanKts: 25, gustKts: 38, dirDeg: 120, daylight: true },
+    null, 'intermediate', fullSpot
+  );
+  assert.ok(r.score <= 3);
+  assert.equal(r.flags.offshore, true);
+  assert.ok(r.reasons.some((s) => /gust/i.test(s)));
+});
+
+test('scoreHour: dark means zero; ebb sets eddy flag; low springs sets ledge flag', () => {
+  const dark = core.scoreHour({ meanKts: 18, gustKts: 20, dirDeg: 230, daylight: false }, null, 'intermediate', fullSpot);
+  assert.equal(dark.score, 0);
+  assert.ok(dark.reasons.some((s) => /dark/i.test(s)));
+
+  const ebbLow = core.scoreHour(
+    { meanKts: 16, gustKts: 19, dirDeg: 230, daylight: true },
+    { state: 'ebb', height: 0.9, range: 3.4, springsCoeff: 0.9, hoursToNext: 1, nextKind: 'low' },
+    'intermediate', fullSpot
+  );
+  assert.equal(ebbLow.flags.eddy, true);
+  assert.equal(ebbLow.flags.ledge, true);
+  assert.ok(ebbLow.reasons.some((s) => /eddy/i.test(s)));
+  assert.ok(ebbLow.reasons.some((s) => /[Ll]edge/.test(s)));
+});
+
+test('scoreHour: too-light wind reports why', () => {
+  const r = core.scoreHour({ meanKts: 6, gustKts: 8, dirDeg: 230, daylight: true }, null, 'beginner', fullSpot);
+  assert.equal(r.score, 0);
+  assert.ok(r.reasons.some((s) => /light/i.test(s)));
 });

@@ -101,5 +101,57 @@
     return (0.4 + 0.6 * tide.springsCoeff) * clamp(windKts / 20, 0, 1);
   }
 
-  return { PROFILES, clamp, speedScore, gustPenalty, angDiff, inBand, directionBand, parseEventMs, tideContext, chopPenalty };
+  // Below this height on a big spring ebb, Gurnard Ledge is a foil-eater.
+  const LEDGE_HEIGHT_M = 1.2;
+  const LEDGE_SPRINGS_COEFF = 0.6;
+
+  function scoreHour(hour, tide, profileKey, spot) {
+    const profile = PROFILES[profileKey] || PROFILES.intermediate;
+    const reasons = [];
+    const flags = { offshore: false, chop: false, eddy: false, ledge: false };
+
+    let score = speedScore(hour.meanKts, profile);
+    if (score === 0 && Number.isFinite(hour.meanKts)) {
+      reasons.push(hour.meanKts < profile.min
+        ? `Too light for ${profile.label.toLowerCase()} (${Math.round(hour.meanKts)} kts)`
+        : `Too strong for ${profile.label.toLowerCase()} (${Math.round(hour.meanKts)} kts)`);
+    }
+
+    const gp = gustPenalty(hour.meanKts, hour.gustKts);
+    if (gp > 0.3) reasons.push(`Gusty — ${Math.round(hour.meanKts)} kts gusting ${Math.round(hour.gustKts)}`);
+    score -= gp;
+
+    const band = directionBand(hour.dirDeg, spot.bands);
+    if (band) {
+      score -= band.penalty || 0;
+      if (band.offshore) flags.offshore = true;
+      if (band.note) reasons.push(band.note);
+      score = Math.min(score, band.cap);
+    }
+
+    const cp = chopPenalty(hour.dirDeg, hour.meanKts, tide, spot);
+    if (cp > 0.2) {
+      flags.chop = true;
+      reasons.push('Wind against tide — expect chop');
+    }
+    score -= cp;
+
+    if (tide && tide.state === 'ebb') {
+      flags.eddy = true;
+      reasons.push('Ebb eddy in the bay — flatter water inshore');
+    }
+    if (tide && tide.height < LEDGE_HEIGHT_M && tide.springsCoeff > LEDGE_SPRINGS_COEFF) {
+      flags.ledge = true;
+      reasons.push('Gurnard Ledge shallow — watch your foil west of the bay');
+    }
+
+    if (!hour.daylight) {
+      score = 0;
+      reasons.push('After dark');
+    }
+
+    return { score: clamp(score, 0, 5), reasons, flags };
+  }
+
+  return { PROFILES, clamp, speedScore, gustPenalty, angDiff, inBand, directionBand, parseEventMs, tideContext, chopPenalty, scoreHour };
 });
